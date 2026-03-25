@@ -200,7 +200,7 @@
             if (!acc || !name) return alert("請填寫");
             for (let i = 0; i < qty; i++) { await addDoc(collection(db, "inventory"), { account: acc, name, quantity: 1, status: 'stock', partner: '', tradeDate: '', createdAt: new Date().getTime() + i }); }
             
-            // 新增完自動清空寶可夢名稱，並把數量歸 1
+            // 🔥 新增完自動清空寶可夢名稱，並把數量歸 1
             document.getElementById('pokemonInput').value = '';
             document.getElementById('quantityInput').value = '1'; 
         });
