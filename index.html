@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.3 Pro</title>
+    <title>寶可夢交換管理系統 v6.4 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; min-height: 100vh; }
@@ -20,7 +20,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (搜尋自動清除版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (新增數量自動歸1版)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -199,7 +199,10 @@
             const acc = document.getElementById('accountSelect').value, name = document.getElementById('pokemonInput').value.trim(), qty = parseInt(document.getElementById('quantityInput').value) || 1;
             if (!acc || !name) return alert("請填寫");
             for (let i = 0; i < qty; i++) { await addDoc(collection(db, "inventory"), { account: acc, name, quantity: 1, status: 'stock', partner: '', tradeDate: '', createdAt: new Date().getTime() + i }); }
+            
+            // 新增完自動清空寶可夢名稱，並把數量歸 1
             document.getElementById('pokemonInput').value = '';
+            document.getElementById('quantityInput').value = '1'; 
         });
 
         // 監聽搜尋框與清除按鈕
