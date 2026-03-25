@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.5 Pro</title>
+    <title>寶可夢交換管理系統 v6.6 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; min-height: 100vh; }
@@ -20,7 +20,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (現貨顯示最快交換日版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (搜尋智慧推薦最快帳號版)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -199,7 +199,6 @@
             const acc = document.getElementById('accountSelect').value, name = document.getElementById('pokemonInput').value.trim(), qty = parseInt(document.getElementById('quantityInput').value) || 1;
             if (!acc || !name) return alert("請填寫");
             for (let i = 0; i < qty; i++) { await addDoc(collection(db, "inventory"), { account: acc, name, quantity: 1, status: 'stock', partner: '', tradeDate: '', createdAt: new Date().getTime() + i }); }
-            
             document.getElementById('pokemonInput').value = '';
             document.getElementById('quantityInput').value = '1'; 
         });
@@ -214,22 +213,59 @@
             const list = document.getElementById('pokemonList'); list.innerHTML = '';
             const searchText = searchInput.value.trim().toLowerCase();
 
-            const filtered = pokemons.filter(p => {
+            // 1. 過濾資料
+            let filtered = pokemons.filter(p => {
                 const matchTab = currentTab === 'all' ? true : p.status === currentTab;
                 const matchSearch = p.name.toLowerCase().includes(searchText);
                 return matchTab && matchSearch;
             });
 
+            // 2. 預先計算所有庫存的「最快日期」
+            filtered.forEach(p => {
+                if (p.status === 'stock') {
+                    p.nextDateStr = findNextAvailableDate(p.account);
+                }
+            });
+
+            // 3. 如果有搜尋，把「最快日期」越早的排越前面
+            if (searchText !== '' && currentTab === 'stock') {
+                filtered.sort((a, b) => {
+                    if (a.status === 'stock' && b.status === 'stock') {
+                        return a.nextDateStr.localeCompare(b.nextDateStr);
+                    }
+                    return 0;
+                });
+            }
+
+            // 4. 找出搜尋結果中的絕對「最快日期」
+            let fastestDate = null;
+            if (searchText !== '' && currentTab === 'stock') {
+                const stockItems = filtered.filter(p => p.status === 'stock');
+                if (stockItems.length > 0) {
+                    fastestDate = stockItems[0].nextDateStr; // 因為已經排序過，第一筆就是最快的
+                }
+            }
+
             if (!filtered.length) { list.innerHTML = '<div class="col-span-full text-center py-10 text-gray-400 italic text-sm">找不到符合的寶可夢</div>'; return; }
+            
             filtered.forEach(p => {
                 const div = document.createElement('div');
-                div.className = "bg-white p-4 md:p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between";
+                div.className = "bg-white p-4 md:p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between transition-all";
                 let action = '', tag = '';
                 
                 if (p.status === 'stock') {
-                    // 🔥 計算並顯示最快可換日期
-                    const nextDate = findNextAvailableDate(p.account);
-                    tag = `<div class="flex items-center gap-1.5"><span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">在庫</span><span class="text-purple-600 text-[9px] md:text-[10px] font-black bg-purple-50 px-2 py-0.5 rounded border border-purple-200 shrink-0">最快: ${nextDate}</span></div>`;
+                    // 判斷這隻是不是這次搜尋中「最快可以換的」
+                    const isFastest = (searchText !== '' && p.nextDateStr === fastestDate);
+                    
+                    if (isFastest) {
+                        // 如果是最快的：給紅色火焰標籤，並給外框加上紅暈強調
+                        tag = `<div class="flex items-center gap-1.5"><span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">在庫</span><span class="text-red-600 text-[9px] md:text-[10px] font-black bg-red-50 px-2 py-0.5 rounded border border-red-200 shadow-sm shrink-0">🔥 推薦最快: ${p.nextDateStr}</span></div>`;
+                        div.classList.add('ring-2', 'ring-red-300', 'bg-red-50/20'); 
+                    } else {
+                        // 平常狀態：一般紫色標籤
+                        tag = `<div class="flex items-center gap-1.5"><span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">在庫</span><span class="text-purple-600 text-[9px] md:text-[10px] font-black bg-purple-50 px-2 py-0.5 rounded border border-purple-200 shrink-0">可排: ${p.nextDateStr}</span></div>`;
+                    }
+                    
                     action = `<button onclick="openTrade('${p.id}', '${p.account}')" class="bg-orange-500 text-white px-4 md:px-5 py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shrink-0">安排</button>`;
                 } else if (p.status === 'trading') {
                     tag = `<span class="text-orange-600 text-[9px] md:text-[10px] font-black bg-orange-50 px-2 py-0.5 rounded border border-orange-200 shrink-0">${p.tradeDate} 待交換</span>`;
