@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.4 Pro</title>
+    <title>寶可夢交換管理系統 v6.5 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; min-height: 100vh; }
@@ -20,7 +20,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (新增數量自動歸1版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (現貨顯示最快交換日版)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -156,6 +156,7 @@
             });
         }
 
+        // 計算該帳號最快可以交換的日期
         function findNextAvailableDate(accName) {
             let checkDate = new Date(); let found = false; let finalDateStr = "";
             while (!found) {
@@ -173,7 +174,6 @@
             document.getElementById('tradeModal').classList.remove('hidden');
         };
 
-        // 自動清除搜尋框的函數
         function clearSearch() {
             searchInput.value = '';
             clearSearchBtn.classList.add('hidden');
@@ -186,7 +186,7 @@
             const autoDate = findNextAvailableDate(selectedAccName);
             await updateDoc(doc(db, "inventory", selectedId), { status: 'trading', partner, tradeDate: autoDate });
             document.getElementById('tradeModal').classList.add('hidden');
-            clearSearch(); // 安排完自動清除搜尋
+            clearSearch(); 
         });
 
         document.getElementById('saveAccountBtn').addEventListener('click', async () => {
@@ -200,12 +200,10 @@
             if (!acc || !name) return alert("請填寫");
             for (let i = 0; i < qty; i++) { await addDoc(collection(db, "inventory"), { account: acc, name, quantity: 1, status: 'stock', partner: '', tradeDate: '', createdAt: new Date().getTime() + i }); }
             
-            // 🔥 新增完自動清空寶可夢名稱，並把數量歸 1
             document.getElementById('pokemonInput').value = '';
             document.getElementById('quantityInput').value = '1'; 
         });
 
-        // 監聽搜尋框與清除按鈕
         searchInput.addEventListener('input', () => {
             clearSearchBtn.classList.toggle('hidden', searchInput.value === '');
             render();
@@ -227,17 +225,21 @@
                 const div = document.createElement('div');
                 div.className = "bg-white p-4 md:p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between";
                 let action = '', tag = '';
+                
                 if (p.status === 'stock') {
-                    tag = '<span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100">在庫</span>';
-                    action = `<button onclick="openTrade('${p.id}', '${p.account}')" class="bg-orange-500 text-white px-4 md:px-5 py-2 rounded-xl text-xs md:text-sm font-bold shadow-md">安排</button>`;
+                    // 🔥 計算並顯示最快可換日期
+                    const nextDate = findNextAvailableDate(p.account);
+                    tag = `<div class="flex items-center gap-1.5"><span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">在庫</span><span class="text-purple-600 text-[9px] md:text-[10px] font-black bg-purple-50 px-2 py-0.5 rounded border border-purple-200 shrink-0">最快: ${nextDate}</span></div>`;
+                    action = `<button onclick="openTrade('${p.id}', '${p.account}')" class="bg-orange-500 text-white px-4 md:px-5 py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shrink-0">安排</button>`;
                 } else if (p.status === 'trading') {
-                    tag = `<span class="text-orange-600 text-[9px] md:text-[10px] font-black bg-orange-50 px-2 py-0.5 rounded border border-orange-200">${p.tradeDate} 待交換</span>`;
-                    action = `<button onclick="updateStatus('${p.id}', 'done')" class="bg-green-600 text-white px-4 md:px-5 py-2 rounded-xl text-xs md:text-sm font-bold shadow-md">完成</button>`;
+                    tag = `<span class="text-orange-600 text-[9px] md:text-[10px] font-black bg-orange-50 px-2 py-0.5 rounded border border-orange-200 shrink-0">${p.tradeDate} 待交換</span>`;
+                    action = `<button onclick="updateStatus('${p.id}', 'done')" class="bg-green-600 text-white px-4 md:px-5 py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shrink-0">完成</button>`;
                 } else {
-                    tag = '<span class="text-green-700 text-[9px] md:text-[10px] font-black bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase">Done</span>';
-                    action = `<div class="bg-green-500 text-white px-3 md:px-4 py-2 rounded-xl text-[10px] md:text-xs font-black">已完成</div>`;
+                    tag = '<span class="text-green-700 text-[9px] md:text-[10px] font-black bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase shrink-0">Done</span>';
+                    action = `<div class="bg-green-500 text-white px-3 md:px-4 py-2 rounded-xl text-[10px] md:text-xs font-black shrink-0">已完成</div>`;
                 }
-                div.innerHTML = `<div class="flex flex-col"><div class="flex items-center gap-1.5 md:gap-2">${tag}<div class="flex items-center gap-1"><span class="text-[9px] md:text-[10px] text-gray-400 font-mono">@${p.account}</span><button onclick="copy('${p.account}', this)" class="text-[9px] md:text-[10px] text-blue-400 font-bold">複製</button></div></div><span class="text-base md:text-lg font-black text-gray-800">${p.name}</span>${p.partner ? `<div class="flex items-center gap-2 mt-0.5"><span class="text-[10px] text-indigo-500 font-bold uppercase tracking-tighter">買家: ${p.partner}</span><button onclick="copy('${p.partner}', this)" class="text-[9px] text-indigo-400 font-bold">複製</button></div>` : ''}</div><div class="flex items-center gap-1 md:gap-2">${action}<button onclick="deleteItem('${p.id}')" class="text-red-100 p-2">×</button></div>`;
+                
+                div.innerHTML = `<div class="flex flex-col flex-1 overflow-hidden pr-2"><div class="flex items-center gap-1.5 md:gap-2 mb-1">${tag}<div class="flex items-center gap-1 truncate"><span class="text-[9px] md:text-[10px] text-gray-400 font-mono truncate">@${p.account}</span><button onclick="copy('${p.account}', this)" class="text-[9px] md:text-[10px] text-blue-400 font-bold shrink-0">複製</button></div></div><span class="text-base md:text-lg font-black text-gray-800 truncate">${p.name}</span>${p.partner ? `<div class="flex items-center gap-2 mt-0.5"><span class="text-[10px] text-indigo-500 font-bold uppercase tracking-tighter truncate">買家: ${p.partner}</span><button onclick="copy('${p.partner}', this)" class="text-[9px] text-indigo-400 font-bold shrink-0">複製</button></div>` : ''}</div><div class="flex items-center gap-1 md:gap-2 shrink-0">${action}<button onclick="deleteItem('${p.id}')" class="text-red-200 hover:text-red-400 p-2 text-lg leading-none">&times;</button></div>`;
                 list.appendChild(div);
             });
         }
@@ -251,7 +253,7 @@
             currentTab = e.target.dataset.tab;
             document.querySelectorAll('.tab-btn').forEach(b => b.className = "tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm");
             e.target.className = "tab-btn px-4 md:px-6 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md";
-            clearSearch(); // 切換分頁時自動清除搜尋
+            clearSearch(); 
         }));
     </script>
 </body>
