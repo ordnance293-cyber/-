@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.6 Pro</title>
+    <title>寶可夢交換管理系統 v6.7 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; min-height: 100vh; }
@@ -20,7 +20,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (搜尋智慧推薦最快帳號版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (日期精準從今日起算版)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -156,13 +156,28 @@
             });
         }
 
-        // 計算該帳號最快可以交換的日期
+        // 🔥 修復：精準抓取本地時區的「今天日期」，絕不會再抓到昨天
         function findNextAvailableDate(accName) {
-            let checkDate = new Date(); let found = false; let finalDateStr = "";
+            let checkDate = new Date(); 
+            let found = false; 
+            let finalDateStr = "";
+            
             while (!found) {
-                const dateStr = checkDate.toISOString().split('T')[0];
+                // 手動組合 YYYY-MM-DD，確保是台灣本地時間
+                const year = checkDate.getFullYear();
+                const month = String(checkDate.getMonth() + 1).padStart(2, '0');
+                const day = String(checkDate.getDate()).padStart(2, '0');
+                const dateStr = `${year}-${month}-${day}`;
+                
                 const hasTrade = pokemons.some(p => p.account === accName && p.tradeDate === dateStr && p.status !== 'stock');
-                if (!hasTrade) { finalDateStr = dateStr; found = true; } else { checkDate.setDate(checkDate.getDate() + 1); }
+                
+                if (!hasTrade) { 
+                    finalDateStr = dateStr; 
+                    found = true; 
+                } else { 
+                    // 如果今天滿了，就往後加一天
+                    checkDate.setDate(checkDate.getDate() + 1); 
+                }
             }
             return finalDateStr;
         }
@@ -242,7 +257,7 @@
             if (searchText !== '' && currentTab === 'stock') {
                 const stockItems = filtered.filter(p => p.status === 'stock');
                 if (stockItems.length > 0) {
-                    fastestDate = stockItems[0].nextDateStr; // 因為已經排序過，第一筆就是最快的
+                    fastestDate = stockItems[0].nextDateStr; 
                 }
             }
 
@@ -254,15 +269,12 @@
                 let action = '', tag = '';
                 
                 if (p.status === 'stock') {
-                    // 判斷這隻是不是這次搜尋中「最快可以換的」
                     const isFastest = (searchText !== '' && p.nextDateStr === fastestDate);
                     
                     if (isFastest) {
-                        // 如果是最快的：給紅色火焰標籤，並給外框加上紅暈強調
                         tag = `<div class="flex items-center gap-1.5"><span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">在庫</span><span class="text-red-600 text-[9px] md:text-[10px] font-black bg-red-50 px-2 py-0.5 rounded border border-red-200 shadow-sm shrink-0">🔥 推薦最快: ${p.nextDateStr}</span></div>`;
                         div.classList.add('ring-2', 'ring-red-300', 'bg-red-50/20'); 
                     } else {
-                        // 平常狀態：一般紫色標籤
                         tag = `<div class="flex items-center gap-1.5"><span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">在庫</span><span class="text-purple-600 text-[9px] md:text-[10px] font-black bg-purple-50 px-2 py-0.5 rounded border border-purple-200 shrink-0">可排: ${p.nextDateStr}</span></div>`;
                     }
                     
