@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>寶可夢交換管理系統 v6.1 Professional</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        /* 滾動條美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); }
+        ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 10px; }
+        .date-card { transition: all 0.3s ease; min-width: 200px; }
+        @media (max-width: 640px) {
+            .date-card { min-width: 160px; }
+        }
+    </style>
+</head>
+<body class="p-3 md:p-8 font-sans text-gray-900">
+    <div class="max-w-5xl mx-auto space-y-4 md:space-y-6">
+        
+        <div class="text-center py-2 md:py-4">
+            <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (行動裝置優化版)</p>
+        </div>
+
+        <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
+            <div class="flex flex-col md:flex-row items-start md:items-center gap-4">
+                <div class="flex items-center gap-3 shrink-0 w-full md:w-auto">
+                    <span class="font-bold text-gray-700 shrink-0 text-sm md:text-base">帳號管理</span>
+                    <input type="text" id="newAccountInput" placeholder="輸入帳號" class="flex-1 md:w-40 bg-white border border-gray-200 p-2 rounded-xl focus:ring-2 focus:ring-green-400 outline-none text-sm shadow-sm">
+                    <button id="saveAccountBtn" class="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-all text-sm font-bold shadow-md active:scale-95 shrink-0">保存</button>
+                </div>
+                <div id="accountTags" class="flex flex-wrap gap-2 flex-1"></div>
+            </div>
+        </div>
+
+        <div class="glass-panel p-5 md:p-6 rounded-3xl shadow-2xl">
+            <div class="flex items-center gap-2 mb-4">
+                <div class="w-2 h-6 bg-blue-500 rounded-full"></div>
+                <h2 class="text-lg md:text-xl font-bold text-gray-800">新增庫存</h2>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-3 md:p-4 bg-white/50 rounded-2xl border border-white/50">
+                <div class="space-y-1">
+                    <label class="block text-[10px] md:text-xs font-bold text-blue-600 ml-1 uppercase">選擇帳號</label>
+                    <select id="accountSelect" class="border-0 bg-white p-2.5 rounded-xl w-full shadow-sm text-sm">
+                        <option value="">-- 選擇帳號 --</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2 space-y-1">
+                    <label class="block text-[10px] md:text-xs font-bold text-blue-600 ml-1 uppercase">寶可夢與數量</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="pokemonInput" placeholder="輸入寶可夢名稱" class="border-0 bg-white p-2.5 rounded-xl flex-1 shadow-sm text-sm">
+                        <input type="number" id="quantityInput" min="1" value="1" class="border-0 bg-white p-2.5 rounded-xl w-16 md:w-20 text-center shadow-sm text-sm font-bold">
+                        <button id="addPokemonBtn" class="bg-blue-600 text-white px-4 md:px-8 py-2.5 rounded-xl hover:bg-blue-700 transition-all font-bold shadow-lg active:scale-95 text-sm">新增</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-panel p-5 md:p-6 rounded-3xl shadow-2xl border-t-8 border-orange-400">
+            <div class="flex items-center gap-2 mb-4">
+                <div class="w-2 h-6 bg-orange-500 rounded-full"></div>
+                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (系統排程)</h2>
+            </div>
+            <div id="scheduleTimeline" class="flex gap-3 md:gap-4 overflow-x-auto pb-4"></div>
+        </div>
+
+        <div class="glass-panel p-5 md:p-6 rounded-3xl shadow-2xl">
+            <div class="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-4">
+                <button class="tab-btn px-4 md:px-6 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm" data-tab="stock">在庫</button>
+                <button class="tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm" data-tab="trading">待交換</button>
+                <button class="tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm" data-tab="done">已完成</button>
+                <button class="tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm" data-tab="all">全部</button>
+            </div>
+            <div id="pokemonList" class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4"></div>
+        </div>
+    </div>
+
+    <div id="tradeModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-3xl shadow-2xl w-full max-w-[300px] text-center">
+            <h2 class="text-xl font-black text-gray-800 tracking-tight">安排交換</h2>
+            <p id="targetAccLabel" class="text-blue-500 text-sm font-bold mt-1"></p>
+            <input type="text" id="partnerInput" placeholder="買家名稱" class="border border-gray-200 p-3 rounded-2xl w-full mt-4 text-center focus:ring-2 focus:ring-orange-400 outline-none font-bold text-sm">
+            <div class="flex gap-2 mt-5">
+                <button id="cancelTradeBtn" class="flex-1 py-2 text-gray-400 font-bold text-sm">取消</button>
+                <button id="confirmTradeBtn" class="flex-[2] bg-orange-500 text-white py-2 rounded-2xl font-bold hover:bg-orange-600 active:scale-95 shadow-md text-sm transition-all">確認排隊</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, updateDoc, doc, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBG_bVJ6-SxRHPBWyUmQUCICMfsvc9ixg4",
+            authDomain: "pokemon-a2b5c.firebaseapp.com",
+            projectId: "pokemon-a2b5c",
+            storageBucket: "pokemon-a2b5c.firebasestorage.app",
+            messagingSenderId: "961491205971",
+            appId: "1:961491205971:web:28e7edf7885d03e2c0eba6"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let currentTab = 'stock', pokemons = [], savedAccounts = [], selectedId = null, selectedAccName = null;
+
+        onSnapshot(query(collection(db, "accounts"), orderBy("name")), (snapshot) => {
+            savedAccounts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const select = document.getElementById('accountSelect'), tags = document.getElementById('accountTags');
+            select.innerHTML = '<option value="">-- 選擇帳號 --</option>';
+            tags.innerHTML = '';
+            savedAccounts.forEach(acc => {
+                const opt = document.createElement('option');
+                opt.value = acc.name; opt.textContent = acc.name;
+                select.appendChild(opt);
+                const span = document.createElement('div');
+                span.className = "bg-green-100 text-green-700 px-3 py-1 rounded-xl text-[10px] md:text-xs font-bold border border-green-200 flex items-center gap-1 shadow-sm";
+                span.innerHTML = `${acc.name} <button onclick="deleteAccount('${acc.id}')" class="text-red-400">×</button>`;
+                tags.appendChild(span);
+            });
+        });
+
+        onSnapshot(query(collection(db, "inventory")), (snapshot) => {
+            pokemons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            pokemons.sort((a, b) => (a.tradeDate || '9999').localeCompare(b.tradeDate || '9999') || b.createdAt - a.createdAt);
+            render(); renderTimeline();
+        });
+
+        function renderTimeline() {
+            const timeline = document.getElementById('scheduleTimeline');
+            const tradingItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate);
+            if (!tradingItems.length) { timeline.innerHTML = '<div class="text-gray-400 py-4 italic text-sm">✨ 暫無排程</div>'; return; }
+            const groups = {};
+            tradingItems.forEach(p => { if (!groups[p.tradeDate]) groups[p.tradeDate] = []; groups[p.tradeDate].push(p); });
+            const sortedDates = Object.keys(groups).sort();
+            timeline.innerHTML = '';
+            sortedDates.forEach(date => {
+                const box = document.createElement('div');
+                box.className = "bg-white rounded-2xl p-3 md:p-4 shadow-md border border-orange-100 date-card";
+                let inner = `<div class="font-black text-orange-600 border-b pb-1.5 mb-2 text-sm">${date}</div>`;
+                groups[date].forEach(p => {
+                    inner += `<div class="text-[11px] mb-2 p-1.5 bg-gray-50 rounded-xl border-l-4 border-orange-400 font-bold">
+                        <div class="flex justify-between items-center text-gray-400 text-[9px]"><span>@${p.account}</span><button onclick="copy('${p.account}', this)" class="text-blue-500">複製</button></div>
+                        <div class="text-gray-700 flex justify-between items-center mt-0.5"><span class="truncate pr-1">${p.name}➔${p.partner}</span><button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0">複製</button></div>
+                    </div>`;
+                });
+                box.innerHTML = inner; timeline.appendChild(box);
+            });
+        }
+
+        function findNextAvailableDate(accName) {
+            let checkDate = new Date();
+            let found = false;
+            let finalDateStr = "";
+            while (!found) {
+                const dateStr = checkDate.toISOString().split('T')[0];
+                const hasTrade = pokemons.some(p => p.account === accName && p.tradeDate === dateStr && p.status !== 'stock');
+                if (!hasTrade) { finalDateStr = dateStr; found = true; } 
+                else { checkDate.setDate(checkDate.getDate() + 1); }
+            }
+            return finalDateStr;
+        }
+
+        window.openTrade = (id, accName) => {
+            selectedId = id; selectedAccName = accName;
+            document.getElementById('targetAccLabel').innerText = `@${accName}`;
+            document.getElementById('partnerInput').value = '';
+            document.getElementById('tradeModal').classList.remove('hidden');
+        };
+
+        document.getElementById('confirmTradeBtn').addEventListener('click', async () => {
+            const partner = document.getElementById('partnerInput').value.trim();
+            if (!partner) return alert("輸入買家");
+            const autoDate = findNextAvailableDate(selectedAccName);
+            await updateDoc(doc(db, "inventory", selectedId), { status: 'trading', partner, tradeDate: autoDate });
+            document.getElementById('tradeModal').classList.add('hidden');
+        });
+
+        document.getElementById('saveAccountBtn').addEventListener('click', async () => {
+            const name = document.getElementById('newAccountInput').value.trim();
+            if (name) await addDoc(collection(db, "accounts"), { name });
+            document.getElementById('newAccountInput').value = '';
+        });
+
+        document.getElementById('addPokemonBtn').addEventListener('click', async () => {
+            const acc = document.getElementById('accountSelect').value, name = document.getElementById('pokemonInput').value.trim(), qty = parseInt(document.getElementById('quantityInput').value) || 1;
+            if (!acc || !name) return alert("請填寫");
+            for (let i = 0; i < qty; i++) {
+                await addDoc(collection(db, "inventory"), { account: acc, name, quantity: 1, status: 'stock', partner: '', tradeDate: '', createdAt: new Date().getTime() + i });
+            }
+            document.getElementById('pokemonInput').value = '';
+        });
+
+        function render() {
+            const list = document.getElementById('pokemonList'); list.innerHTML = '';
+            const filtered = pokemons.filter(p => currentTab === 'all' ? true : p.status === currentTab);
+            if (!filtered.length) { list.innerHTML = '<div class="col-span-full text-center py-10 text-gray-400 italic text-sm">暫無資料</div>'; return; }
+            filtered.forEach(p => {
+                const div = document.createElement('div');
+                div.className = "bg-white p-4 md:p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between";
+                let action = '', tag = '';
+                if (p.status === 'stock') {
+                    tag = '<span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100">在庫</span>';
+                    action = `<button onclick="openTrade('${p.id}', '${p.account}')" class="bg-orange-500 text-white px-4 md:px-5 py-2 rounded-xl text-xs md:text-sm font-bold shadow-md">安排</button>`;
+                } else if (p.status === 'trading') {
+                    tag = `<span class="text-orange-600 text-[9px] md:text-[10px] font-black bg-orange-50 px-2 py-0.5 rounded border border-orange-200">${p.tradeDate} 待交換</span>`;
+                    action = `<button onclick="updateStatus('${p.id}', 'done')" class="bg-green-600 text-white px-4 md:px-5 py-2 rounded-xl text-xs md:text-sm font-bold shadow-md">完成</button>`;
+                } else {
+                    tag = '<span class="text-green-700 text-[9px] md:text-[10px] font-black bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase">Done</span>';
+                    action = `<div class="bg-green-500 text-white px-3 md:px-4 py-2 rounded-xl text-[10px] md:text-xs font-black">已完成</div>`;
+                }
+                div.innerHTML = `<div class="flex flex-col"><div class="flex items-center gap-1.5 md:gap-2">${tag}<div class="flex items-center gap-1"><span class="text-[9px] md:text-[10px] text-gray-400 font-mono">@${p.account}</span><button onclick="copy('${p.account}', this)" class="text-[9px] md:text-[10px] text-blue-400 font-bold">複製</button></div></div><span class="text-base md:text-lg font-black text-gray-800">${p.name}</span>${p.partner ? `<div class="flex items-center gap-2 mt-0.5"><span class="text-[10px] text-indigo-500 font-bold uppercase tracking-tighter">買家: ${p.partner}</span><button onclick="copy('${p.partner}', this)" class="text-[9px] text-indigo-400 font-bold">複製</button></div>` : ''}</div><div class="flex items-center gap-1 md:gap-2">${action}<button onclick="deleteItem('${p.id}')" class="text-red-100 p-2">×</button></div>`;
+                list.appendChild(div);
+            });
+        }
+
+        document.getElementById('cancelTradeBtn').addEventListener('click', () => document.getElementById('tradeModal').classList.add('hidden'));
+        window.updateStatus = async (id, status) => await updateDoc(doc(db, "inventory", id), { status });
+        window.deleteItem = async (id) => { if(confirm('確定刪除項目？')) await deleteDoc(doc(db, "inventory", id)); };
+        window.deleteAccount = async (id) => { if(confirm('確定刪除帳號？')) await deleteDoc(doc(db, "accounts", id)); };
+        window.copy = (text, btn) => { navigator.clipboard.writeText(text); const old = btn.innerText; btn.innerText = 'OK!'; btn.style.color = '#10B981'; setTimeout(() => { btn.innerText = old; btn.style.color = ''; }, 1000); };
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', (e) => {
+            currentTab = e.target.dataset.tab;
+            document.querySelectorAll('.tab-btn').forEach(b => b.className = "tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm");
+            e.target.className = "tab-btn px-4 md:px-6 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md";
+            render();
+        }));
+    </script>
+</body>
+</html>
