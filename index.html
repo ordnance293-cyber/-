@@ -141,12 +141,10 @@
             });
         });
 
-        // 🌟 修改 B 處：提取逾期重排邏輯為獨立函式，方便午夜 12 點自動呼叫
         function checkAndRescheduleOverdue() {
             if (!pokemons.length) return;
             const today = new Date();
             const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-            // 只有狀態為 'trading' 且時間過期的才會被順延，'done' 的項目不會被影響
             const overdueItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate && p.tradeDate < todayStr);
             
             if (overdueItems.length > 0) {
@@ -184,14 +182,12 @@
             pokemons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             pokemons.sort((a, b) => (a.tradeDate || '9999').localeCompare(b.tradeDate || '9999') || b.createdAt - a.createdAt);
             
-            checkAndRescheduleOverdue(); // 初始載入及資料更新時檢查
-
+            checkAndRescheduleOverdue(); 
             render(); renderTimeline();
         });
 
         function renderTimeline() {
             const timeline = document.getElementById('scheduleTimeline');
-            // 🌟 修改 A 處：納入 'done' 的訂單
             const tradingItems = pokemons.filter(p => (p.status === 'trading' || p.status === 'done') && p.tradeDate);
             if (!tradingItems.length) { timeline.innerHTML = '<div class="text-gray-400 py-4 italic text-sm">✨ 暫無排程</div>'; return; }
             
@@ -215,7 +211,6 @@
                     const isDone = p.status === 'done';
                     const itemDiv = document.createElement('div');
                     
-                    // 🌟 修改 A 處：依據完成狀態套用不同樣式與 Class
                     const baseClass = "text-[11px] p-2 rounded-xl border-l-4 font-bold shadow-sm transition-transform";
                     if (isDone) {
                         itemDiv.className = `${baseClass} bg-green-50 border-green-400 opacity-70 done-item`;
@@ -252,7 +247,6 @@
                     delayOnTouchOnly: true, 
                     fallbackTolerance: 5, 
                     ghostClass: 'sortable-ghost',
-                    // 🌟 修改 A 處：防呆！不允許拖曳帶有 done-item class 的項目
                     filter: 'button, .done-item', 
                     preventOnFilter: false,
                     onEnd: async function (evt) {
@@ -269,10 +263,9 @@
                         const conflictItem = pokemons.find(p => p.account === accName && p.tradeDate === newDate && p.status !== 'stock' && p.id !== itemId);
                         
                         if (conflictItem) {
-                            // 🌟 修改 A 處：若覆蓋的位置已經有該帳號「已完成」的訂單，則拒絕推擠它！
                             if (conflictItem.status === 'done') {
                                 alert(`@${accName} 於 ${newDate} 已經有已完成的交易，無法覆蓋或順延！`);
-                                renderTimeline(); // 重新渲染畫面退回原狀
+                                renderTimeline(); 
                                 return;
                             }
 
@@ -442,7 +435,6 @@
             clearSearch(); 
         }));
 
-        // 🌟 修改 B 處：註冊定時器，每 60 秒定期檢查是否跨夜，如未完成的訂單就會自動往後排程
         setInterval(checkAndRescheduleOverdue, 60000);
     </script>
 </body>
