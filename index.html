@@ -3,17 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.10 Pro</title>
+    <title>寶可夢交換管理系統 v6.11 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <style>
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; min-height: 100vh; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; min-height: 100vh; overscroll-behavior-y: none; }
         .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); }
         ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 10px; }
         .date-card { transition: all 0.3s ease; min-width: 200px; }
         @media (max-width: 640px) { .date-card { min-width: 160px; } }
+        /* 🔥 iPad 專屬：防止長按時反白文字，並鎖定觸控行為 */
+        .drag-item { user-select: none; -webkit-user-select: none; touch-action: pan-y; cursor: grab; }
+        .drag-item:active { cursor: grabbing; }
         .sortable-ghost { opacity: 0.4; background-color: #ffedd5; border: 2px dashed #f97316; }
     </style>
 </head>
@@ -22,7 +25,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (拖曳智慧擠位排程版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (iPad觸控拖曳完美版)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -62,7 +65,7 @@
         <div class="glass-panel p-5 md:p-6 rounded-3xl shadow-2xl border-t-8 border-orange-400">
             <div class="flex items-center gap-2 mb-4">
                 <div class="w-2 h-6 bg-orange-500 rounded-full"></div>
-                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (長按卡片可拖曳換日/插隊)</h2>
+                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (長按卡片 0.2 秒浮起後即可拖曳)</h2>
             </div>
             <div id="scheduleTimeline" class="flex gap-3 md:gap-4 overflow-x-auto pb-4"></div>
         </div>
@@ -190,23 +193,24 @@
                 box.innerHTML = inner;
                 
                 const listContainer = document.createElement('div');
-                listContainer.className = "flex-1 space-y-2 min-h-[30px]"; 
+                listContainer.className = "flex-1 space-y-2 min-h-[40px]"; 
                 listContainer.dataset.date = date;
 
                 groups[date].forEach(p => {
                     const itemDiv = document.createElement('div');
-                    itemDiv.className = "text-[11px] p-2 bg-gray-50 rounded-xl border-l-4 border-orange-400 font-bold shadow-sm cursor-grab active:cursor-grabbing transition-transform";
+                    // 🔥 加入 drag-item class 啟用 iPad 完美觸控
+                    itemDiv.className = "drag-item text-[11px] p-2 bg-gray-50 rounded-xl border-l-4 border-orange-400 font-bold shadow-sm transition-transform";
                     itemDiv.dataset.id = p.id;
                     itemDiv.dataset.account = p.account;
                     
                     itemDiv.innerHTML = `
                         <div class="flex justify-between items-center text-gray-400 text-[9px]">
                             <span>@${p.account}</span>
-                            <button onclick="copy('${p.account}', this)" class="text-blue-500 px-2 py-1 -mr-2 bg-transparent">複製</button>
+                            <button onclick="copy('${p.account}', this)" class="text-blue-500 px-2 py-1 -mr-2 bg-transparent shrink-0 relative z-10">複製</button>
                         </div>
                         <div class="text-gray-700 flex justify-between items-center mt-0.5">
-                            <span class="truncate pr-1">${p.name}➔${p.partner}</span>
-                            <button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0 px-2 py-1 -mr-2 bg-transparent">複製</button>
+                            <span class="truncate pr-1 pointer-events-none">${p.name}➔${p.partner}</span>
+                            <button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0 px-2 py-1 -mr-2 bg-transparent relative z-10">複製</button>
                         </div>
                     `;
                     listContainer.appendChild(itemDiv);
@@ -215,13 +219,16 @@
                 box.appendChild(listContainer);
                 timeline.appendChild(box);
 
-                // 🔥 拖曳與插隊邏輯
+                // 🔥 初始化 SortableJS (加入 iPad 防手震寬容度)
                 new Sortable(listContainer, {
                     group: 'shared-timeline', 
                     animation: 150,
-                    delay: 200, 
+                    delay: 250, // 長按 0.25 秒
                     delayOnTouchOnly: true, 
+                    fallbackTolerance: 5, // 🔥 關鍵解法：允許長按時手指有 5px 的微震動，才不會被當作滾動網頁！
                     ghostClass: 'sortable-ghost',
+                    filter: 'button', // 防止點擊「複製」按鈕時觸發拖曳
+                    preventOnFilter: false,
                     onEnd: async function (evt) {
                         const itemEl = evt.item;
                         const toList = evt.to;
@@ -233,7 +240,7 @@
                         const accName = itemEl.dataset.account;
                         const newDate = toList.dataset.date;
                         
-                        // 找看看目標日期是不是已經有排同帳號的交換了 (也就是被撞到的那隻)
+                        // 找看看目標日期是不是已經有排同帳號的交換了 (被撞到的那隻)
                         const conflictItem = pokemons.find(p => p.account === accName && p.tradeDate === newDate && p.status === 'trading' && p.id !== itemId);
                         
                         if (conflictItem) {
@@ -261,7 +268,7 @@
             });
         }
 
-        // 🔥 升級：支援從指定日期開始往後找空檔
+        // 升級：支援從指定日期開始往後找空檔
         function findNextAvailableDate(accName, startDateStr = null) {
             let checkDate = new Date(); 
             if (startDateStr) {
