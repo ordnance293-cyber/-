@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.8 Pro</title>
+    <title>寶可夢交換管理系統 v6.10 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; min-height: 100vh; }
         .glass-panel { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
@@ -13,6 +14,7 @@
         ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 10px; }
         .date-card { transition: all 0.3s ease; min-width: 200px; }
         @media (max-width: 640px) { .date-card { min-width: 160px; } }
+        .sortable-ghost { opacity: 0.4; background-color: #ffedd5; border: 2px dashed #f97316; }
     </style>
 </head>
 <body class="p-3 md:p-8 font-sans text-gray-900">
@@ -20,7 +22,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (午夜自動展延防放鳥版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (拖曳智慧擠位排程版)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -60,7 +62,7 @@
         <div class="glass-panel p-5 md:p-6 rounded-3xl shadow-2xl border-t-8 border-orange-400">
             <div class="flex items-center gap-2 mb-4">
                 <div class="w-2 h-6 bg-orange-500 rounded-full"></div>
-                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (系統排程)</h2>
+                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (長按卡片可拖曳換日/插隊)</h2>
             </div>
             <div id="scheduleTimeline" class="flex gap-3 md:gap-4 overflow-x-auto pb-4"></div>
         </div>
@@ -133,15 +135,12 @@
             pokemons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             pokemons.sort((a, b) => (a.tradeDate || '9999').localeCompare(b.tradeDate || '9999') || b.createdAt - a.createdAt);
             
-            // 🔥 午夜自動展延邏輯開始
             const today = new Date();
             const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-            
-            // 找出狀態是「待交換」，而且日期「小於今天（過期）」的寶可夢
             const overdueItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate && p.tradeDate < todayStr);
             
             if (overdueItems.length > 0) {
-                let tempPokemons = [...pokemons]; // 建立一個暫存清單來排日期，避免互相衝堂
+                let tempPokemons = [...pokemons]; 
                 
                 overdueItems.forEach(item => {
                     let checkDate = new Date(); 
@@ -154,25 +153,21 @@
                         const d = String(checkDate.getDate()).padStart(2, '0');
                         const dStr = `${y}-${m}-${d}`;
                         
-                        // 檢查這一天這個帳號是不是已經有排交換了
                         const hasTrade = tempPokemons.some(p => p.account === item.account && p.tradeDate === dStr && p.status !== 'stock');
                         
                         if (!hasTrade) { 
                             newDateStr = dStr; 
                             found = true; 
                         } else { 
-                            // 已經滿了就往後加一天繼續找
                             checkDate.setDate(checkDate.getDate() + 1); 
                         }
                     }
                     
-                    // 把找到的新日期更新到暫存清單跟 Firebase 資料庫
                     const idx = tempPokemons.findIndex(p => p.id === item.id);
                     if (idx > -1) tempPokemons[idx].tradeDate = newDateStr;
                     updateDoc(doc(db, "inventory", item.id), { tradeDate: newDateStr });
                 });
             }
-            // 🔥 午夜自動展延邏輯結束
 
             render(); renderTimeline();
         });
@@ -181,25 +176,98 @@
             const timeline = document.getElementById('scheduleTimeline');
             const tradingItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate);
             if (!tradingItems.length) { timeline.innerHTML = '<div class="text-gray-400 py-4 italic text-sm">✨ 暫無排程</div>'; return; }
+            
             const groups = {};
             tradingItems.forEach(p => { if (!groups[p.tradeDate]) groups[p.tradeDate] = []; groups[p.tradeDate].push(p); });
             const sortedDates = Object.keys(groups).sort();
             timeline.innerHTML = '';
+            
             sortedDates.forEach(date => {
-                const box = document.createElement('div'); box.className = "bg-white rounded-2xl p-3 md:p-4 shadow-md border border-orange-100 date-card";
+                const box = document.createElement('div'); 
+                box.className = "bg-white rounded-2xl p-3 md:p-4 shadow-md border border-orange-100 date-card flex-shrink-0 flex flex-col";
+                
                 let inner = `<div class="font-black text-orange-600 border-b pb-1.5 mb-2 text-sm">${date}</div>`;
+                box.innerHTML = inner;
+                
+                const listContainer = document.createElement('div');
+                listContainer.className = "flex-1 space-y-2 min-h-[30px]"; 
+                listContainer.dataset.date = date;
+
                 groups[date].forEach(p => {
-                    inner += `<div class="text-[11px] mb-2 p-1.5 bg-gray-50 rounded-xl border-l-4 border-orange-400 font-bold">
-                        <div class="flex justify-between items-center text-gray-400 text-[9px]"><span>@${p.account}</span><button onclick="copy('${p.account}', this)" class="text-blue-500">複製</button></div>
-                        <div class="text-gray-700 flex justify-between items-center mt-0.5"><span class="truncate pr-1">${p.name}➔${p.partner}</span><button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0">複製</button></div>
-                    </div>`;
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = "text-[11px] p-2 bg-gray-50 rounded-xl border-l-4 border-orange-400 font-bold shadow-sm cursor-grab active:cursor-grabbing transition-transform";
+                    itemDiv.dataset.id = p.id;
+                    itemDiv.dataset.account = p.account;
+                    
+                    itemDiv.innerHTML = `
+                        <div class="flex justify-between items-center text-gray-400 text-[9px]">
+                            <span>@${p.account}</span>
+                            <button onclick="copy('${p.account}', this)" class="text-blue-500 px-2 py-1 -mr-2 bg-transparent">複製</button>
+                        </div>
+                        <div class="text-gray-700 flex justify-between items-center mt-0.5">
+                            <span class="truncate pr-1">${p.name}➔${p.partner}</span>
+                            <button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0 px-2 py-1 -mr-2 bg-transparent">複製</button>
+                        </div>
+                    `;
+                    listContainer.appendChild(itemDiv);
                 });
-                box.innerHTML = inner; timeline.appendChild(box);
+                
+                box.appendChild(listContainer);
+                timeline.appendChild(box);
+
+                // 🔥 拖曳與插隊邏輯
+                new Sortable(listContainer, {
+                    group: 'shared-timeline', 
+                    animation: 150,
+                    delay: 200, 
+                    delayOnTouchOnly: true, 
+                    ghostClass: 'sortable-ghost',
+                    onEnd: async function (evt) {
+                        const itemEl = evt.item;
+                        const toList = evt.to;
+                        const fromList = evt.from;
+                        
+                        if (toList === fromList) return; 
+                        
+                        const itemId = itemEl.dataset.id;
+                        const accName = itemEl.dataset.account;
+                        const newDate = toList.dataset.date;
+                        
+                        // 找看看目標日期是不是已經有排同帳號的交換了 (也就是被撞到的那隻)
+                        const conflictItem = pokemons.find(p => p.account === accName && p.tradeDate === newDate && p.status === 'trading' && p.id !== itemId);
+                        
+                        if (conflictItem) {
+                            // 暫時把拖曳的卡片寫入新日期 (讓系統知道這天滿了)
+                            const draggedPokemon = pokemons.find(p => p.id === itemId);
+                            if (draggedPokemon) draggedPokemon.tradeDate = newDate;
+
+                            // 從目標日期的「下一天」開始，幫被擠掉的卡片找新位子
+                            const parts = newDate.split('-');
+                            let searchDate = new Date(parts[0], parts[1] - 1, parts[2]);
+                            searchDate.setDate(searchDate.getDate() + 1);
+                            const searchDateStr = `${searchDate.getFullYear()}-${String(searchDate.getMonth() + 1).padStart(2, '0')}-${String(searchDate.getDate()).padStart(2, '0')}`;
+
+                            const pushDate = findNextAvailableDate(accName, searchDateStr);
+                            
+                            // 更新雙方的日期到 Firebase
+                            await updateDoc(doc(db, "inventory", conflictItem.id), { tradeDate: pushDate });
+                            await updateDoc(doc(db, "inventory", itemId), { tradeDate: newDate });
+                        } else {
+                            // 沒撞到人，直接更新拖曳的卡片就好
+                            await updateDoc(doc(db, "inventory", itemId), { tradeDate: newDate });
+                        }
+                    }
+                });
             });
         }
 
-        function findNextAvailableDate(accName) {
+        // 🔥 升級：支援從指定日期開始往後找空檔
+        function findNextAvailableDate(accName, startDateStr = null) {
             let checkDate = new Date(); 
+            if (startDateStr) {
+                const parts = startDateStr.split('-');
+                checkDate = new Date(parts[0], parts[1] - 1, parts[2]);
+            }
             let found = false; 
             let finalDateStr = "";
             
