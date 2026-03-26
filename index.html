@@ -16,7 +16,7 @@
         @media (max-width: 640px) { .date-card { min-width: 160px; } }
         
         /* 🔥 iPad 終極剋星：徹底封殺長按「拷貝/反白」選單 */
-        .drag-item, .drag-item span, .drag-item div { 
+        .drag-item, .drag-item span, .drag-item div, .done-item, .done-item span, .done-item div { 
             -webkit-touch-callout: none !important; /* 禁用 iOS 長按彈出選單 */
             -webkit-user-select: none !important;   /* 禁用 Safari 文字反白 */
             user-select: none !important;           /* 禁用一般文字反白 */
@@ -141,12 +141,12 @@
             });
         });
 
-        onSnapshot(query(collection(db, "inventory")), (snapshot) => {
-            pokemons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            pokemons.sort((a, b) => (a.tradeDate || '9999').localeCompare(b.tradeDate || '9999') || b.createdAt - a.createdAt);
-            
+        // 🌟 修改 B 處：提取逾期重排邏輯為獨立函式，方便午夜 12 點自動呼叫
+        function checkAndRescheduleOverdue() {
+            if (!pokemons.length) return;
             const today = new Date();
             const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            // 只有狀態為 'trading' 且時間過期的才會被順延，'done' 的項目不會被影響
             const overdueItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate && p.tradeDate < todayStr);
             
             if (overdueItems.length > 0) {
@@ -178,13 +178,21 @@
                     updateDoc(doc(db, "inventory", item.id), { tradeDate: newDateStr });
                 });
             }
+        }
+
+        onSnapshot(query(collection(db, "inventory")), (snapshot) => {
+            pokemons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            pokemons.sort((a, b) => (a.tradeDate || '9999').localeCompare(b.tradeDate || '9999') || b.createdAt - a.createdAt);
+            
+            checkAndRescheduleOverdue(); // 初始載入及資料更新時檢查
 
             render(); renderTimeline();
         });
 
         function renderTimeline() {
             const timeline = document.getElementById('scheduleTimeline');
-            const tradingItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate);
+            // 🌟 修改 A 處：納入 'done' 的訂單
+            const tradingItems = pokemons.filter(p => (p.status === 'trading' || p.status === 'done') && p.tradeDate);
             if (!tradingItems.length) { timeline.innerHTML = '<div class="text-gray-400 py-4 italic text-sm">✨ 暫無排程</div>'; return; }
             
             const groups = {};
@@ -204,19 +212,31 @@
                 listContainer.dataset.date = date;
 
                 groups[date].forEach(p => {
+                    const isDone = p.status === 'done';
                     const itemDiv = document.createElement('div');
-                    itemDiv.className = "drag-item text-[11px] p-2 bg-gray-50 rounded-xl border-l-4 border-orange-400 font-bold shadow-sm transition-transform";
+                    
+                    // 🌟 修改 A 處：依據完成狀態套用不同樣式與 Class
+                    const baseClass = "text-[11px] p-2 rounded-xl border-l-4 font-bold shadow-sm transition-transform";
+                    if (isDone) {
+                        itemDiv.className = `${baseClass} bg-green-50 border-green-400 opacity-70 done-item`;
+                    } else {
+                        itemDiv.className = `${baseClass} bg-gray-50 border-orange-400 drag-item`;
+                    }
+                    
                     itemDiv.dataset.id = p.id;
                     itemDiv.dataset.account = p.account;
                     
+                    const doneBadge = isDone ? `<span class="bg-green-500 text-white px-1.5 py-0.5 rounded text-[8px] ml-1 shadow-sm font-black">已完成</span>` : '';
+                    const strikeClass = isDone ? 'line-through text-gray-400' : 'text-gray-700';
+
                     itemDiv.innerHTML = `
                         <div class="flex justify-between items-center text-gray-400 text-[9px]">
-                            <span>@${p.account}</span>
-                            <button onclick="copy('${p.account}', this)" class="text-blue-500 px-2 py-1 -mr-2 bg-transparent shrink-0 relative z-10" style="-webkit-touch-callout: default;">複製</button>
+                            <span class="flex items-center">@${p.account} ${doneBadge}</span>
+                            <button onclick="copy('${p.account}', this)" class="text-blue-500 px-2 py-1 -mr-2 bg-transparent shrink-0 relative z-10 pointer-events-auto" style="-webkit-touch-callout: default;">複製</button>
                         </div>
-                        <div class="text-gray-700 flex justify-between items-center mt-0.5">
-                            <span class="truncate pr-1 pointer-events-none">${p.name}➔${p.partner}</span>
-                            <button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0 px-2 py-1 -mr-2 bg-transparent relative z-10" style="-webkit-touch-callout: default;">複製</button>
+                        <div class="flex justify-between items-center mt-0.5">
+                            <span class="truncate pr-1 pointer-events-none ${strikeClass}">${p.name}➔${p.partner}</span>
+                            <button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0 px-2 py-1 -mr-2 bg-transparent relative z-10 pointer-events-auto" style="-webkit-touch-callout: default;">複製</button>
                         </div>
                     `;
                     listContainer.appendChild(itemDiv);
@@ -232,7 +252,8 @@
                     delayOnTouchOnly: true, 
                     fallbackTolerance: 5, 
                     ghostClass: 'sortable-ghost',
-                    filter: 'button', 
+                    // 🌟 修改 A 處：防呆！不允許拖曳帶有 done-item class 的項目
+                    filter: 'button, .done-item', 
                     preventOnFilter: false,
                     onEnd: async function (evt) {
                         const itemEl = evt.item;
@@ -245,9 +266,16 @@
                         const accName = itemEl.dataset.account;
                         const newDate = toList.dataset.date;
                         
-                        const conflictItem = pokemons.find(p => p.account === accName && p.tradeDate === newDate && p.status === 'trading' && p.id !== itemId);
+                        const conflictItem = pokemons.find(p => p.account === accName && p.tradeDate === newDate && p.status !== 'stock' && p.id !== itemId);
                         
                         if (conflictItem) {
+                            // 🌟 修改 A 處：若覆蓋的位置已經有該帳號「已完成」的訂單，則拒絕推擠它！
+                            if (conflictItem.status === 'done') {
+                                alert(`@${accName} 於 ${newDate} 已經有已完成的交易，無法覆蓋或順延！`);
+                                renderTimeline(); // 重新渲染畫面退回原狀
+                                return;
+                            }
+
                             const draggedPokemon = pokemons.find(p => p.id === itemId);
                             if (draggedPokemon) draggedPokemon.tradeDate = newDate;
 
@@ -329,6 +357,7 @@
             for (let i = 0; i < qty; i++) { await addDoc(collection(db, "inventory"), { account: acc, name, quantity: 1, status: 'stock', partner: '', tradeDate: '', createdAt: new Date().getTime() + i }); }
             document.getElementById('pokemonInput').value = '';
             document.getElementById('quantityInput').value = '1'; 
+            document.getElementById('accountSelect').value = ''; 
         });
 
         searchInput.addEventListener('input', () => {
@@ -412,6 +441,9 @@
             e.target.className = "tab-btn px-4 md:px-6 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md";
             clearSearch(); 
         }));
+
+        // 🌟 修改 B 處：註冊定時器，每 60 秒定期檢查是否跨夜，如未完成的訂單就會自動往後排程
+        setInterval(checkAndRescheduleOverdue, 60000);
     </script>
 </body>
 </html>
