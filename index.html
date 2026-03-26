@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.7 Pro</title>
+    <title>寶可夢交換管理系統 v6.8 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; min-height: 100vh; }
@@ -20,7 +20,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (日期精準從今日起算版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (午夜自動展延防放鳥版)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -132,6 +132,48 @@
         onSnapshot(query(collection(db, "inventory")), (snapshot) => {
             pokemons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             pokemons.sort((a, b) => (a.tradeDate || '9999').localeCompare(b.tradeDate || '9999') || b.createdAt - a.createdAt);
+            
+            // 🔥 午夜自動展延邏輯開始
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            
+            // 找出狀態是「待交換」，而且日期「小於今天（過期）」的寶可夢
+            const overdueItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate && p.tradeDate < todayStr);
+            
+            if (overdueItems.length > 0) {
+                let tempPokemons = [...pokemons]; // 建立一個暫存清單來排日期，避免互相衝堂
+                
+                overdueItems.forEach(item => {
+                    let checkDate = new Date(); 
+                    let found = false; 
+                    let newDateStr = "";
+                    
+                    while (!found) {
+                        const y = checkDate.getFullYear();
+                        const m = String(checkDate.getMonth() + 1).padStart(2, '0');
+                        const d = String(checkDate.getDate()).padStart(2, '0');
+                        const dStr = `${y}-${m}-${d}`;
+                        
+                        // 檢查這一天這個帳號是不是已經有排交換了
+                        const hasTrade = tempPokemons.some(p => p.account === item.account && p.tradeDate === dStr && p.status !== 'stock');
+                        
+                        if (!hasTrade) { 
+                            newDateStr = dStr; 
+                            found = true; 
+                        } else { 
+                            // 已經滿了就往後加一天繼續找
+                            checkDate.setDate(checkDate.getDate() + 1); 
+                        }
+                    }
+                    
+                    // 把找到的新日期更新到暫存清單跟 Firebase 資料庫
+                    const idx = tempPokemons.findIndex(p => p.id === item.id);
+                    if (idx > -1) tempPokemons[idx].tradeDate = newDateStr;
+                    updateDoc(doc(db, "inventory", item.id), { tradeDate: newDateStr });
+                });
+            }
+            // 🔥 午夜自動展延邏輯結束
+
             render(); renderTimeline();
         });
 
@@ -156,14 +198,12 @@
             });
         }
 
-        // 🔥 修復：精準抓取本地時區的「今天日期」，絕不會再抓到昨天
         function findNextAvailableDate(accName) {
             let checkDate = new Date(); 
             let found = false; 
             let finalDateStr = "";
             
             while (!found) {
-                // 手動組合 YYYY-MM-DD，確保是台灣本地時間
                 const year = checkDate.getFullYear();
                 const month = String(checkDate.getMonth() + 1).padStart(2, '0');
                 const day = String(checkDate.getDate()).padStart(2, '0');
@@ -175,7 +215,6 @@
                     finalDateStr = dateStr; 
                     found = true; 
                 } else { 
-                    // 如果今天滿了，就往後加一天
                     checkDate.setDate(checkDate.getDate() + 1); 
                 }
             }
@@ -228,21 +267,18 @@
             const list = document.getElementById('pokemonList'); list.innerHTML = '';
             const searchText = searchInput.value.trim().toLowerCase();
 
-            // 1. 過濾資料
             let filtered = pokemons.filter(p => {
                 const matchTab = currentTab === 'all' ? true : p.status === currentTab;
                 const matchSearch = p.name.toLowerCase().includes(searchText);
                 return matchTab && matchSearch;
             });
 
-            // 2. 預先計算所有庫存的「最快日期」
             filtered.forEach(p => {
                 if (p.status === 'stock') {
                     p.nextDateStr = findNextAvailableDate(p.account);
                 }
             });
 
-            // 3. 如果有搜尋，把「最快日期」越早的排越前面
             if (searchText !== '' && currentTab === 'stock') {
                 filtered.sort((a, b) => {
                     if (a.status === 'stock' && b.status === 'stock') {
@@ -252,7 +288,6 @@
                 });
             }
 
-            // 4. 找出搜尋結果中的絕對「最快日期」
             let fastestDate = null;
             if (searchText !== '' && currentTab === 'stock') {
                 const stockItems = filtered.filter(p => p.status === 'stock');
