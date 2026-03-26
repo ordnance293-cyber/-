@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.11 Pro</title>
+    <title>寶可夢交換管理系統 v6.12 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <style>
@@ -14,9 +14,16 @@
         ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 10px; }
         .date-card { transition: all 0.3s ease; min-width: 200px; }
         @media (max-width: 640px) { .date-card { min-width: 160px; } }
-        /* 🔥 iPad 專屬：防止長按時反白文字，並鎖定觸控行為 */
-        .drag-item { user-select: none; -webkit-user-select: none; touch-action: pan-y; cursor: grab; }
+        
+        /* 🔥 iPad 終極剋星：徹底封殺長按「拷貝/反白」選單 */
+        .drag-item, .drag-item span, .drag-item div { 
+            -webkit-touch-callout: none !important; /* 禁用 iOS 長按彈出選單 */
+            -webkit-user-select: none !important;   /* 禁用 Safari 文字反白 */
+            user-select: none !important;           /* 禁用一般文字反白 */
+        }
+        .drag-item { touch-action: pan-y; cursor: grab; }
         .drag-item:active { cursor: grabbing; }
+        
         .sortable-ghost { opacity: 0.4; background-color: #ffedd5; border: 2px dashed #f97316; }
     </style>
 </head>
@@ -25,7 +32,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (iPad觸控拖曳完美版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (終極防選字拖曳版)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -65,7 +72,7 @@
         <div class="glass-panel p-5 md:p-6 rounded-3xl shadow-2xl border-t-8 border-orange-400">
             <div class="flex items-center gap-2 mb-4">
                 <div class="w-2 h-6 bg-orange-500 rounded-full"></div>
-                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (長按卡片 0.2 秒浮起後即可拖曳)</h2>
+                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (長按卡片即可拖曳，不會再跳複製選單)</h2>
             </div>
             <div id="scheduleTimeline" class="flex gap-3 md:gap-4 overflow-x-auto pb-4"></div>
         </div>
@@ -198,7 +205,6 @@
 
                 groups[date].forEach(p => {
                     const itemDiv = document.createElement('div');
-                    // 🔥 加入 drag-item class 啟用 iPad 完美觸控
                     itemDiv.className = "drag-item text-[11px] p-2 bg-gray-50 rounded-xl border-l-4 border-orange-400 font-bold shadow-sm transition-transform";
                     itemDiv.dataset.id = p.id;
                     itemDiv.dataset.account = p.account;
@@ -206,11 +212,11 @@
                     itemDiv.innerHTML = `
                         <div class="flex justify-between items-center text-gray-400 text-[9px]">
                             <span>@${p.account}</span>
-                            <button onclick="copy('${p.account}', this)" class="text-blue-500 px-2 py-1 -mr-2 bg-transparent shrink-0 relative z-10">複製</button>
+                            <button onclick="copy('${p.account}', this)" class="text-blue-500 px-2 py-1 -mr-2 bg-transparent shrink-0 relative z-10" style="-webkit-touch-callout: default;">複製</button>
                         </div>
                         <div class="text-gray-700 flex justify-between items-center mt-0.5">
                             <span class="truncate pr-1 pointer-events-none">${p.name}➔${p.partner}</span>
-                            <button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0 px-2 py-1 -mr-2 bg-transparent relative z-10">複製</button>
+                            <button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0 px-2 py-1 -mr-2 bg-transparent relative z-10" style="-webkit-touch-callout: default;">複製</button>
                         </div>
                     `;
                     listContainer.appendChild(itemDiv);
@@ -219,15 +225,14 @@
                 box.appendChild(listContainer);
                 timeline.appendChild(box);
 
-                // 🔥 初始化 SortableJS (加入 iPad 防手震寬容度)
                 new Sortable(listContainer, {
                     group: 'shared-timeline', 
                     animation: 150,
-                    delay: 250, // 長按 0.25 秒
+                    delay: 250, 
                     delayOnTouchOnly: true, 
-                    fallbackTolerance: 5, // 🔥 關鍵解法：允許長按時手指有 5px 的微震動，才不會被當作滾動網頁！
+                    fallbackTolerance: 5, 
                     ghostClass: 'sortable-ghost',
-                    filter: 'button', // 防止點擊「複製」按鈕時觸發拖曳
+                    filter: 'button', 
                     preventOnFilter: false,
                     onEnd: async function (evt) {
                         const itemEl = evt.item;
@@ -240,15 +245,12 @@
                         const accName = itemEl.dataset.account;
                         const newDate = toList.dataset.date;
                         
-                        // 找看看目標日期是不是已經有排同帳號的交換了 (被撞到的那隻)
                         const conflictItem = pokemons.find(p => p.account === accName && p.tradeDate === newDate && p.status === 'trading' && p.id !== itemId);
                         
                         if (conflictItem) {
-                            // 暫時把拖曳的卡片寫入新日期 (讓系統知道這天滿了)
                             const draggedPokemon = pokemons.find(p => p.id === itemId);
                             if (draggedPokemon) draggedPokemon.tradeDate = newDate;
 
-                            // 從目標日期的「下一天」開始，幫被擠掉的卡片找新位子
                             const parts = newDate.split('-');
                             let searchDate = new Date(parts[0], parts[1] - 1, parts[2]);
                             searchDate.setDate(searchDate.getDate() + 1);
@@ -256,11 +258,9 @@
 
                             const pushDate = findNextAvailableDate(accName, searchDateStr);
                             
-                            // 更新雙方的日期到 Firebase
                             await updateDoc(doc(db, "inventory", conflictItem.id), { tradeDate: pushDate });
                             await updateDoc(doc(db, "inventory", itemId), { tradeDate: newDate });
                         } else {
-                            // 沒撞到人，直接更新拖曳的卡片就好
                             await updateDoc(doc(db, "inventory", itemId), { tradeDate: newDate });
                         }
                     }
@@ -268,7 +268,6 @@
             });
         }
 
-        // 升級：支援從指定日期開始往後找空檔
         function findNextAvailableDate(accName, startDateStr = null) {
             let checkDate = new Date(); 
             if (startDateStr) {
