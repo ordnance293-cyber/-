@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.13 Pro</title>
+    <title>寶可夢交換管理系統 v6.14 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <style>
@@ -32,7 +32,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (自動重排與清單淨化版 v6.13)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (提早完成自動遞補版 v6.14)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -150,7 +150,6 @@
         function checkAndRescheduleOverdue() {
             if (!pokemons.length) return;
             const todayStr = getTodayStr();
-            // 過濾出狀態為 'trading' 但日期早於今天的項目
             const overdueItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate && p.tradeDate < todayStr);
             
             if (overdueItems.length > 0) {
@@ -177,7 +176,6 @@
             const timeline = document.getElementById('scheduleTimeline');
             const todayStr = getTodayStr();
             
-            // 🔥 修改 1：只顯示 status 為 'trading' 的項目，移除 'done'
             const tradingItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate);
             
             if (!tradingItems.length) { timeline.innerHTML = '<div class="text-gray-400 py-4 italic text-sm">✨ 暫無待交換任務</div>'; return; }
@@ -185,7 +183,6 @@
             const groups = {};
             tradingItems.forEach(p => { if (!groups[p.tradeDate]) groups[p.tradeDate] = []; groups[p.tradeDate].push(p); });
             
-            // 🔥 修改 2：只顯示當天及未來的日期 (自動過濾掉已過期的空分欄)
             const sortedDates = Object.keys(groups).filter(d => d >= todayStr).sort();
             timeline.innerHTML = '';
             
@@ -293,6 +290,44 @@
             return finalDateStr;
         }
 
+        // 🔥 新增：當產生空檔時，自動將該帳號後續的交易往前遞補
+        window.repackSchedule = async (accName) => {
+            const todayStr = getTodayStr();
+            // 取出該帳號所有未完成的交易並依日期排序
+            const pendingTrades = pokemons.filter(p => p.account === accName && p.status === 'trading');
+            pendingTrades.sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
+
+            // 取得該帳號從今天起已經被「已完成(done)」佔據的日期集合
+            const occupiedDates = new Set(pokemons.filter(p => p.account === accName && p.status === 'done' && p.tradeDate >= todayStr).map(p => p.tradeDate));
+
+            for (let item of pendingTrades) {
+                let checkDate = new Date(); // 每次都從今天開始找最早空檔
+                let found = false;
+                let finalDateStr = "";
+                
+                while (!found) {
+                    const year = checkDate.getFullYear();
+                    const month = String(checkDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(checkDate.getDate()).padStart(2, '0');
+                    const dateStr = `${year}-${month}-${day}`;
+
+                    // 如果該日期沒有被佔據，就可以排入
+                    if (!occupiedDates.has(dateStr)) {
+                        finalDateStr = dateStr;
+                        occupiedDates.add(dateStr); // 將此日期標記為已佔用，供下個迴圈判斷
+                        found = true;
+                    } else {
+                        checkDate.setDate(checkDate.getDate() + 1);
+                    }
+                }
+                
+                // 只有當計算出的新日期跟原本不同的時候，才更新資料庫（減少請求）
+                if (item.tradeDate !== finalDateStr) {
+                    await updateDoc(doc(db, "inventory", item.id), { tradeDate: finalDateStr });
+                }
+            }
+        };
+
         window.openTrade = (id, accName) => {
             selectedId = id; selectedAccName = accName;
             document.getElementById('targetAccLabel').innerText = `@${accName}`;
@@ -399,10 +434,31 @@
         }
 
         document.getElementById('cancelTradeBtn').addEventListener('click', () => document.getElementById('tradeModal').classList.add('hidden'));
-        window.updateStatus = async (id, status) => await updateDoc(doc(db, "inventory", id), { status });
-        window.deleteItem = async (id) => { if(confirm('確定刪除項目？')) await deleteDoc(doc(db, "inventory", id)); };
+        
+        // 🔥 修改：當狀態變更為 'done' 時，觸發自動遞補機制
+        window.updateStatus = async (id, status) => {
+            const item = pokemons.find(p => p.id === id);
+            await updateDoc(doc(db, "inventory", id), { status });
+            if (status === 'done' && item) {
+                // 等待 Firebase 同步狀態後 (0.8秒)，重新排列該帳號後續的排程
+                setTimeout(() => window.repackSchedule(item.account), 800);
+            }
+        };
+
+        // 🔥 修改：如果刪除的是「待交換(trading)」的項目，也會觸發自動遞補機制
+        window.deleteItem = async (id) => { 
+            const item = pokemons.find(p => p.id === id);
+            if(confirm('確定刪除項目？')) {
+                await deleteDoc(doc(db, "inventory", id)); 
+                if (item && item.status === 'trading') {
+                    setTimeout(() => window.repackSchedule(item.account), 800);
+                }
+            }
+        };
+
         window.deleteAccount = async (id) => { if(confirm('確定刪除帳號？')) await deleteDoc(doc(db, "accounts", id)); };
         window.copy = (text, btn) => { navigator.clipboard.writeText(text); const old = btn.innerText; btn.innerText = 'OK!'; btn.style.color = '#10B981'; setTimeout(() => { btn.innerText = old; btn.style.color = ''; }, 1000); };
+        
         document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', (e) => {
             currentTab = e.target.dataset.tab;
             document.querySelectorAll('.tab-btn').forEach(b => b.className = "tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm");
