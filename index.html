@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶可夢交換管理系統 v6.12 Pro</title>
+    <title>寶可夢交換管理系統 v6.13 Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <style>
@@ -32,7 +32,7 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (終極防選字拖曳版)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (自動重排與清單淨化版 v6.13)</p>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -72,7 +72,7 @@
         <div class="glass-panel p-5 md:p-6 rounded-3xl shadow-2xl border-t-8 border-orange-400">
             <div class="flex items-center gap-2 mb-4">
                 <div class="w-2 h-6 bg-orange-500 rounded-full"></div>
-                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (長按卡片即可拖曳，不會再跳複製選單)</h2>
+                <h2 class="text-lg md:text-xl font-bold text-gray-800">📅 待交換清單 (僅顯示當日與未來，已完成自動隱藏)</h2>
             </div>
             <div id="scheduleTimeline" class="flex gap-3 md:gap-4 overflow-x-auto pb-4"></div>
         </div>
@@ -127,6 +127,12 @@
         const searchInput = document.getElementById('searchInput');
         const clearSearchBtn = document.getElementById('clearSearchBtn');
 
+        // Helper: 獲取今日日期字串 YYYY-MM-DD
+        function getTodayStr() {
+            const today = new Date();
+            return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        }
+
         onSnapshot(query(collection(db, "accounts"), orderBy("name")), (snapshot) => {
             savedAccounts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             const select = document.getElementById('accountSelect'), tags = document.getElementById('accountTags');
@@ -143,34 +149,15 @@
 
         function checkAndRescheduleOverdue() {
             if (!pokemons.length) return;
-            const today = new Date();
-            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            const todayStr = getTodayStr();
+            // 過濾出狀態為 'trading' 但日期早於今天的項目
             const overdueItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate && p.tradeDate < todayStr);
             
             if (overdueItems.length > 0) {
                 let tempPokemons = [...pokemons]; 
                 
                 overdueItems.forEach(item => {
-                    let checkDate = new Date(); 
-                    let found = false; 
-                    let newDateStr = "";
-                    
-                    while (!found) {
-                        const y = checkDate.getFullYear();
-                        const m = String(checkDate.getMonth() + 1).padStart(2, '0');
-                        const d = String(checkDate.getDate()).padStart(2, '0');
-                        const dStr = `${y}-${m}-${d}`;
-                        
-                        const hasTrade = tempPokemons.some(p => p.account === item.account && p.tradeDate === dStr && p.status !== 'stock');
-                        
-                        if (!hasTrade) { 
-                            newDateStr = dStr; 
-                            found = true; 
-                        } else { 
-                            checkDate.setDate(checkDate.getDate() + 1); 
-                        }
-                    }
-                    
+                    let newDateStr = findNextAvailableDate(item.account, todayStr);
                     const idx = tempPokemons.findIndex(p => p.id === item.id);
                     if (idx > -1) tempPokemons[idx].tradeDate = newDateStr;
                     updateDoc(doc(db, "inventory", item.id), { tradeDate: newDateStr });
@@ -188,19 +175,31 @@
 
         function renderTimeline() {
             const timeline = document.getElementById('scheduleTimeline');
-            const tradingItems = pokemons.filter(p => (p.status === 'trading' || p.status === 'done') && p.tradeDate);
-            if (!tradingItems.length) { timeline.innerHTML = '<div class="text-gray-400 py-4 italic text-sm">✨ 暫無排程</div>'; return; }
+            const todayStr = getTodayStr();
+            
+            // 🔥 修改 1：只顯示 status 為 'trading' 的項目，移除 'done'
+            const tradingItems = pokemons.filter(p => p.status === 'trading' && p.tradeDate);
+            
+            if (!tradingItems.length) { timeline.innerHTML = '<div class="text-gray-400 py-4 italic text-sm">✨ 暫無待交換任務</div>'; return; }
             
             const groups = {};
             tradingItems.forEach(p => { if (!groups[p.tradeDate]) groups[p.tradeDate] = []; groups[p.tradeDate].push(p); });
-            const sortedDates = Object.keys(groups).sort();
+            
+            // 🔥 修改 2：只顯示當天及未來的日期 (自動過濾掉已過期的空分欄)
+            const sortedDates = Object.keys(groups).filter(d => d >= todayStr).sort();
             timeline.innerHTML = '';
             
+            if (sortedDates.length === 0) {
+                timeline.innerHTML = '<div class="text-gray-400 py-4 italic text-sm">✨ 近期無排程</div>';
+                return;
+            }
+
             sortedDates.forEach(date => {
                 const box = document.createElement('div'); 
                 box.className = "bg-white rounded-2xl p-3 md:p-4 shadow-md border border-orange-100 date-card flex-shrink-0 flex flex-col";
                 
-                let inner = `<div class="font-black text-orange-600 border-b pb-1.5 mb-2 text-sm">${date}</div>`;
+                const label = (date === todayStr) ? ' (今天)' : '';
+                let inner = `<div class="font-black text-orange-600 border-b pb-1.5 mb-2 text-sm">${date}${label}</div>`;
                 box.innerHTML = inner;
                 
                 const listContainer = document.createElement('div');
@@ -208,29 +207,18 @@
                 listContainer.dataset.date = date;
 
                 groups[date].forEach(p => {
-                    const isDone = p.status === 'done';
                     const itemDiv = document.createElement('div');
-                    
-                    const baseClass = "text-[11px] p-2 rounded-xl border-l-4 font-bold shadow-sm transition-transform";
-                    if (isDone) {
-                        itemDiv.className = `${baseClass} bg-green-50 border-green-400 opacity-70 done-item`;
-                    } else {
-                        itemDiv.className = `${baseClass} bg-gray-50 border-orange-400 drag-item`;
-                    }
-                    
+                    itemDiv.className = "text-[11px] p-2 rounded-xl border-l-4 font-bold shadow-sm transition-transform bg-gray-50 border-orange-400 drag-item";
                     itemDiv.dataset.id = p.id;
                     itemDiv.dataset.account = p.account;
                     
-                    const doneBadge = isDone ? `<span class="bg-green-500 text-white px-1.5 py-0.5 rounded text-[8px] ml-1 shadow-sm font-black">已完成</span>` : '';
-                    const strikeClass = isDone ? 'line-through text-gray-400' : 'text-gray-700';
-
                     itemDiv.innerHTML = `
                         <div class="flex justify-between items-center text-gray-400 text-[9px]">
-                            <span class="flex items-center">@${p.account} ${doneBadge}</span>
+                            <span class="flex items-center">@${p.account}</span>
                             <button onclick="copy('${p.account}', this)" class="text-blue-500 px-2 py-1 -mr-2 bg-transparent shrink-0 relative z-10 pointer-events-auto" style="-webkit-touch-callout: default;">複製</button>
                         </div>
                         <div class="flex justify-between items-center mt-0.5">
-                            <span class="truncate pr-1 pointer-events-none ${strikeClass}">${p.name}➔${p.partner}</span>
+                            <span class="truncate pr-1 pointer-events-none text-gray-700">${p.name}➔${p.partner}</span>
                             <button onclick="copy('${p.partner}', this)" class="text-blue-500 shrink-0 px-2 py-1 -mr-2 bg-transparent relative z-10 pointer-events-auto" style="-webkit-touch-callout: default;">複製</button>
                         </div>
                     `;
@@ -247,13 +235,12 @@
                     delayOnTouchOnly: true, 
                     fallbackTolerance: 5, 
                     ghostClass: 'sortable-ghost',
-                    filter: 'button, .done-item', 
+                    filter: 'button', 
                     preventOnFilter: false,
                     onEnd: async function (evt) {
                         const itemEl = evt.item;
                         const toList = evt.to;
                         const fromList = evt.from;
-                        
                         if (toList === fromList) return; 
                         
                         const itemId = itemEl.dataset.id;
@@ -264,26 +251,18 @@
                         
                         if (conflictItem) {
                             if (conflictItem.status === 'done') {
-                                alert(`@${accName} 於 ${newDate} 已經有已完成的交易，無法覆蓋或順延！`);
+                                alert(`@${accName} 於 ${newDate} 已經有已完成的交易，無法覆蓋！`);
                                 renderTimeline(); 
                                 return;
                             }
-
-                            const draggedPokemon = pokemons.find(p => p.id === itemId);
-                            if (draggedPokemon) draggedPokemon.tradeDate = newDate;
-
                             const parts = newDate.split('-');
                             let searchDate = new Date(parts[0], parts[1] - 1, parts[2]);
                             searchDate.setDate(searchDate.getDate() + 1);
                             const searchDateStr = `${searchDate.getFullYear()}-${String(searchDate.getMonth() + 1).padStart(2, '0')}-${String(searchDate.getDate()).padStart(2, '0')}`;
-
                             const pushDate = findNextAvailableDate(accName, searchDateStr);
-                            
                             await updateDoc(doc(db, "inventory", conflictItem.id), { tradeDate: pushDate });
-                            await updateDoc(doc(db, "inventory", itemId), { tradeDate: newDate });
-                        } else {
-                            await updateDoc(doc(db, "inventory", itemId), { tradeDate: newDate });
                         }
+                        await updateDoc(doc(db, "inventory", itemId), { tradeDate: newDate });
                     }
                 });
             });
@@ -303,9 +282,7 @@
                 const month = String(checkDate.getMonth() + 1).padStart(2, '0');
                 const day = String(checkDate.getDate()).padStart(2, '0');
                 const dateStr = `${year}-${month}-${day}`;
-                
                 const hasTrade = pokemons.some(p => p.account === accName && p.tradeDate === dateStr && p.status !== 'stock');
-                
                 if (!hasTrade) { 
                     finalDateStr = dateStr; 
                     found = true; 
@@ -401,14 +378,12 @@
                 
                 if (p.status === 'stock') {
                     const isFastest = (searchText !== '' && p.nextDateStr === fastestDate);
-                    
                     if (isFastest) {
                         tag = `<div class="flex items-center gap-1.5"><span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">在庫</span><span class="text-red-600 text-[9px] md:text-[10px] font-black bg-red-50 px-2 py-0.5 rounded border border-red-200 shadow-sm shrink-0">🔥 推薦最快: ${p.nextDateStr}</span></div>`;
                         div.classList.add('ring-2', 'ring-red-300', 'bg-red-50/20'); 
                     } else {
                         tag = `<div class="flex items-center gap-1.5"><span class="text-blue-500 text-[9px] md:text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shrink-0">在庫</span><span class="text-purple-600 text-[9px] md:text-[10px] font-black bg-purple-50 px-2 py-0.5 rounded border border-purple-200 shrink-0">可排: ${p.nextDateStr}</span></div>`;
                     }
-                    
                     action = `<button onclick="openTrade('${p.id}', '${p.account}')" class="bg-orange-500 text-white px-4 md:px-5 py-2 rounded-xl text-xs md:text-sm font-bold shadow-md shrink-0">安排</button>`;
                 } else if (p.status === 'trading') {
                     tag = `<span class="text-orange-600 text-[9px] md:text-[10px] font-black bg-orange-50 px-2 py-0.5 rounded border border-orange-200 shrink-0">${p.tradeDate} 待交換</span>`;
