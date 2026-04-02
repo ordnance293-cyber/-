@@ -32,7 +32,8 @@
         
         <div class="text-center py-2 md:py-4">
             <h1 class="text-2xl md:text-3xl font-extrabold text-white drop-shadow-md tracking-widest uppercase">Pokémon Trade Manager</h1>
-            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80">一帳號一天僅限一次交換 (提早完成自動遞補版 v6.14)</p>
+            <p class="text-blue-100 text-xs md:text-sm mt-1 opacity-80 mb-3">一帳號一天僅限一次交換 (提早完成自動遞補版 v6.14)</p>
+            <button id="copyFilterBtn" class="px-6 py-2 rounded-full bg-pink-500 text-white font-bold text-sm shadow-lg hover:bg-pink-600 active:scale-95 transition-all">📋 背卡</button>
         </div>
 
         <div class="glass-panel p-4 md:p-5 rounded-2xl shadow-xl border-l-8 border-green-500">
@@ -470,18 +471,14 @@
             clearSearch(); 
         }));
 
-        // 🔥 新增：生成現貨文案的邏輯
         document.getElementById('generateCopyBtn').addEventListener('click', () => {
-            // 過濾出「在庫」狀態的寶可夢
             const stockItems = pokemons.filter(p => p.status === 'stock');
             const counts = {};
             
-            // 根據名稱加總數量
             stockItems.forEach(p => {
                 counts[p.name] = (counts[p.name] || 0) + 1;
             });
             
-            // 組合文字
             let text = "";
             for (const [name, qty] of Object.entries(counts)) {
                 text += `${name}（現貨${qty}隻）\n`;
@@ -489,17 +486,14 @@
             
             if (!text) text = "目前無現貨寶可夢。";
             
-            // 顯示在彈窗內
             document.getElementById('copyTextarea').value = text.trim();
             document.getElementById('copyModal').classList.remove('hidden');
         });
 
-        // 🔥 新增：關閉文案彈窗
         document.getElementById('closeCopyModalBtn').addEventListener('click', () => {
             document.getElementById('copyModal').classList.add('hidden');
         });
 
-        // 🔥 新增：複製文案彈窗內的文字
         document.getElementById('doCopyBtn').addEventListener('click', (e) => {
             const text = document.getElementById('copyTextarea').value;
             navigator.clipboard.writeText(text);
@@ -507,6 +501,14 @@
             const old = btn.innerText;
             btn.innerText = '已複製！';
             setTimeout(() => { btn.innerText = old; }, 1500);
+        });
+
+        document.getElementById('copyFilterBtn').addEventListener('click', (e) => {
+            navigator.clipboard.writeText("背卡&異色&!交換");
+            const btn = e.target;
+            const oldText = btn.innerText;
+            btn.innerText = '已複製！';
+            setTimeout(() => { btn.innerText = oldText; }, 1000);
         });
 
         setInterval(checkAndRescheduleOverdue, 60000);
