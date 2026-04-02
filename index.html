@@ -481,7 +481,12 @@
             
             let text = "";
             for (const [name, qty] of Object.entries(counts)) {
-                text += `${name}（現貨${qty}隻）\n`;
+                // 🔥 修改：當數量為 1 時，不顯示備註；大於 1 才顯示「（現貨X隻）」
+                if (qty === 1) {
+                    text += `${name}\n`;
+                } else {
+                    text += `${name}（現貨${qty}隻）\n`;
+                }
             }
             
             if (!text) text = "目前無現貨寶可夢。";
