@@ -84,6 +84,7 @@
                     <button class="tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm" data-tab="trading">待交換</button>
                     <button class="tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm" data-tab="done">已完成</button>
                     <button class="tab-btn px-4 md:px-6 py-2 rounded-xl text-gray-500 font-bold text-sm" data-tab="all">全部</button>
+                    <button id="generateCopyBtn" class="px-4 md:px-6 py-2 rounded-xl bg-purple-600 text-white font-bold text-sm shadow-md hover:bg-purple-700 active:scale-95 transition-all">📝 現貨文案</button>
                 </div>
                 <div class="w-full md:w-auto relative flex items-center">
                     <span class="absolute left-3 text-gray-400 text-sm">🔍</span>
@@ -103,6 +104,17 @@
             <div class="flex gap-2 mt-5">
                 <button id="cancelTradeBtn" class="flex-1 py-2 text-gray-400 font-bold text-sm">取消</button>
                 <button id="confirmTradeBtn" class="flex-[2] bg-orange-500 text-white py-2 rounded-2xl font-bold hover:bg-orange-600 active:scale-95 shadow-md text-sm transition-all">確認排隊</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="copyModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-3xl shadow-2xl w-full max-w-[400px]">
+            <h2 class="text-xl font-black text-gray-800 tracking-tight mb-4 text-center">📝 現貨文案</h2>
+            <textarea id="copyTextarea" class="w-full h-48 p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-400 outline-none text-sm font-bold resize-none mb-4 text-gray-700"></textarea>
+            <div class="flex gap-2">
+                <button id="closeCopyModalBtn" class="flex-1 py-2 text-gray-400 font-bold text-sm">關閉</button>
+                <button id="doCopyBtn" class="flex-[2] bg-purple-600 text-white py-2 rounded-2xl font-bold hover:bg-purple-700 active:scale-95 shadow-md text-sm transition-all">複製文案</button>
             </div>
         </div>
     </div>
@@ -290,18 +302,15 @@
             return finalDateStr;
         }
 
-        // 🔥 新增：當產生空檔時，自動將該帳號後續的交易往前遞補
         window.repackSchedule = async (accName) => {
             const todayStr = getTodayStr();
-            // 取出該帳號所有未完成的交易並依日期排序
             const pendingTrades = pokemons.filter(p => p.account === accName && p.status === 'trading');
             pendingTrades.sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
 
-            // 取得該帳號從今天起已經被「已完成(done)」佔據的日期集合
             const occupiedDates = new Set(pokemons.filter(p => p.account === accName && p.status === 'done' && p.tradeDate >= todayStr).map(p => p.tradeDate));
 
             for (let item of pendingTrades) {
-                let checkDate = new Date(); // 每次都從今天開始找最早空檔
+                let checkDate = new Date();
                 let found = false;
                 let finalDateStr = "";
                 
@@ -311,17 +320,15 @@
                     const day = String(checkDate.getDate()).padStart(2, '0');
                     const dateStr = `${year}-${month}-${day}`;
 
-                    // 如果該日期沒有被佔據，就可以排入
                     if (!occupiedDates.has(dateStr)) {
                         finalDateStr = dateStr;
-                        occupiedDates.add(dateStr); // 將此日期標記為已佔用，供下個迴圈判斷
+                        occupiedDates.add(dateStr);
                         found = true;
                     } else {
                         checkDate.setDate(checkDate.getDate() + 1);
                     }
                 }
                 
-                // 只有當計算出的新日期跟原本不同的時候，才更新資料庫（減少請求）
                 if (item.tradeDate !== finalDateStr) {
                     await updateDoc(doc(db, "inventory", item.id), { tradeDate: finalDateStr });
                 }
@@ -377,7 +384,6 @@
 
             let filtered = pokemons.filter(p => {
                 const matchTab = currentTab === 'all' ? true : p.status === currentTab;
-                // 🔥 修改：在此處將 p.account 加入比對，讓同一個搜尋列可以查寶可夢名稱或帳號
                 const matchSearch = p.name.toLowerCase().includes(searchText) || p.account.toLowerCase().includes(searchText);
                 return matchTab && matchSearch;
             });
@@ -436,17 +442,14 @@
 
         document.getElementById('cancelTradeBtn').addEventListener('click', () => document.getElementById('tradeModal').classList.add('hidden'));
         
-        // 🔥 修改：當狀態變更為 'done' 時，觸發自動遞補機制
         window.updateStatus = async (id, status) => {
             const item = pokemons.find(p => p.id === id);
             await updateDoc(doc(db, "inventory", id), { status });
             if (status === 'done' && item) {
-                // 等待 Firebase 同步狀態後 (0.8秒)，重新排列該帳號後續的排程
                 setTimeout(() => window.repackSchedule(item.account), 800);
             }
         };
 
-        // 🔥 修改：如果刪除的是「待交換(trading)」的項目，也會觸發自動遞補機制
         window.deleteItem = async (id) => { 
             const item = pokemons.find(p => p.id === id);
             if(confirm('確定刪除項目？')) {
@@ -466,6 +469,45 @@
             e.target.className = "tab-btn px-4 md:px-6 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm shadow-md";
             clearSearch(); 
         }));
+
+        // 🔥 新增：生成現貨文案的邏輯
+        document.getElementById('generateCopyBtn').addEventListener('click', () => {
+            // 過濾出「在庫」狀態的寶可夢
+            const stockItems = pokemons.filter(p => p.status === 'stock');
+            const counts = {};
+            
+            // 根據名稱加總數量
+            stockItems.forEach(p => {
+                counts[p.name] = (counts[p.name] || 0) + 1;
+            });
+            
+            // 組合文字
+            let text = "";
+            for (const [name, qty] of Object.entries(counts)) {
+                text += `${name}（現貨${qty}隻）\n`;
+            }
+            
+            if (!text) text = "目前無現貨寶可夢。";
+            
+            // 顯示在彈窗內
+            document.getElementById('copyTextarea').value = text.trim();
+            document.getElementById('copyModal').classList.remove('hidden');
+        });
+
+        // 🔥 新增：關閉文案彈窗
+        document.getElementById('closeCopyModalBtn').addEventListener('click', () => {
+            document.getElementById('copyModal').classList.add('hidden');
+        });
+
+        // 🔥 新增：複製文案彈窗內的文字
+        document.getElementById('doCopyBtn').addEventListener('click', (e) => {
+            const text = document.getElementById('copyTextarea').value;
+            navigator.clipboard.writeText(text);
+            const btn = e.target;
+            const old = btn.innerText;
+            btn.innerText = '已複製！';
+            setTimeout(() => { btn.innerText = old; }, 1500);
+        });
 
         setInterval(checkAndRescheduleOverdue, 60000);
     </script>
